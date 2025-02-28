@@ -1,0 +1,16 @@
+# https://github.com/rust-lang/rustfmt/blob/master/Configurations.md
+
+style_edition = "2024"
+use_small_heuristics = "Default"
+merge_derives = false
+group_imports = "one"
+imports_granularity = "crate"
+max_width = 120
+wrap_comments=false
+use_field_init_shorthand = true
+chain_width = 50
+force_multiline_blocks = true
+format_code_in_doc_comments = true
+single_line_let_else_max_width = 60
+single_line_if_else_max_width = 60
+empty_item_single_line = false
