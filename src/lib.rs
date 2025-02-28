@@ -9,6 +9,8 @@ use glob::Pattern;
 use itertools::Itertools;
 use rand::seq::IndexedRandom;
 use std::path::PathBuf;
+use strum::Display;
+use tracing::debug;
 
 mod files;
 
@@ -16,24 +18,33 @@ mod files;
 pub struct Args {
     /// The directory to walk. Defaults to the current dir.
     #[arg(long, short)]
-    dir: Option<PathBuf>,
+    pub dir: Option<PathBuf>,
 
     /// The file types to inclue (e.g. 'kt', 'rs')
     #[arg(long, short)]
-    file_types: Vec<String>,
+    pub file_types: Vec<String>,
 
     /// Globs to include.
     #[arg(long, short)]
-    globs: Vec<String>,
+    pub globs: Vec<String>,
 
+    /// The language model to use
     #[arg(value_enum, long, short, default_value = "gpt-4o-mini")]
-    model: ModelKind,
+    pub model: ModelKind,
+
+    /// Do not make requests to the LLM
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Print extra debugging information
+    #[arg(long, short)]
+    pub verbose: bool,
 }
 
 static PROMPT: &str = include_str!("../prompt.md");
 
 #[derive(clap::ValueEnum)]
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Display)]
 pub enum ModelKind {
     #[default]
     #[clap(name = "gpt-4o-mini")]
@@ -41,6 +52,8 @@ pub enum ModelKind {
 }
 
 pub async fn run(args: Args) -> anyhow::Result<()> {
+    debug!("Starting run...");
+    debug!("Model: {}", args.model);
     let dir = match args.dir.clone() {
         Some(dir) => dir,
         None => std::env::current_dir().context("could not get current dir")?,
@@ -48,7 +61,7 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
     let globs = args
         .globs
         .iter()
-        .map(|glob| Pattern::new(glob).with_context(|| format!("could not parse glob '{glob}'")))
+        .map(|glob| files::Glob::parse(glob))
         .collect::<Result<Vec<_>, _>>()?;
     let mut stream = files::stream(FindOpts {
         dir: dir.clone(),
@@ -61,30 +74,34 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
         let info = res?;
         let path = info.path.to_string_lossy();
         let contents = String::from_utf8_lossy(&info.bs).to_string();
+        tracing::debug!("Including {path} [{} bs]", contents.len());
         buf.push_str(&header);
         buf.push_str(&format!("\n## Path:{}\n\n{}\n", path, contents));
     }
     let prompt = PROMPT.replace("FILES_CONTENT", &buf);
+    debug!("Created prompt of size {}bs", prompt.len());
 
     let reqs = ChatRequest::new(vec![ChatMessage::system(prompt)]);
     let model = "gpt-4o-mini";
     let client = Client::default();
-    let resp: ChatResponse = client
-        .exec_chat(model, reqs, None)
-        .await
-        .context("failed to call model")?;
-    let ChatResponse {
-        content,
-        reasoning_content,
-        model_iden,
-        usage,
-    } = resp;
-    let Some(content) = content else {
-        bail!("no content received")
-    };
-    let MessageContent::Text(content) = content else {
-        bail!("unexpected response: {content:?}");
-    };
-    println!("{content}");
+    if !args.dry_run {
+        let resp: ChatResponse = client
+            .exec_chat(model, reqs, None)
+            .await
+            .context("failed to call model")?;
+        let ChatResponse {
+            content,
+            reasoning_content,
+            model_iden,
+            usage,
+        } = resp;
+        let Some(content) = content else {
+            bail!("no content received")
+        };
+        let MessageContent::Text(content) = content else {
+            bail!("unexpected response: {content:?}");
+        };
+        println!("{content}");
+    }
     Ok(())
 }
