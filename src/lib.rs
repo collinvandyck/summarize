@@ -5,6 +5,8 @@ use genai::{
     Client,
     chat::{ChatMessage, ChatRequest, ChatResponse, ContentPart, MessageContent},
 };
+use glob::Pattern;
+use itertools::Itertools;
 use rand::seq::IndexedRandom;
 use std::path::PathBuf;
 
@@ -43,10 +45,15 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
         Some(dir) => dir,
         None => std::env::current_dir().context("could not get current dir")?,
     };
+    let globs = args
+        .globs
+        .iter()
+        .map(|glob| Pattern::new(glob).with_context(|| format!("could not parse glob '{glob}'")))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut stream = files::stream(FindOpts {
         dir: dir.clone(),
         file_types: args.file_types.clone(),
-        globs: args.globs.clone(),
+        globs,
     });
     let mut buf = String::new();
     let mut header = format!("## START FILE {}", "#".repeat(60));

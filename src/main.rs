@@ -6,5 +6,5 @@ use summarize::Args;
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    summarize::run(args.into()).await
+    summarize::run(args).await
 }
