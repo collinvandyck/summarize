@@ -11,6 +11,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
 
 pub struct Glob {
+    original: String,
     glob: Pattern,
     negate: bool,
 }
@@ -20,17 +21,23 @@ impl Glob {
         let mut negate = false;
         if s.starts_with("!") {
             negate = true;
-            if s.len() <= 1 {
-                bail!("invalid glob: {s}");
-            }
-            s = &s[1..];
+            s = &s[1.max(s.len() - 1)..];
         }
         let glob = Pattern::new(s).with_context(|| format!("could not parse glob '{s}'"))?;
-        Ok(Self { glob, negate })
+        let original = s.to_string();
+        Ok(Self { original, glob, negate })
     }
-    fn matches(&self, s: &str) -> bool {
-        let m = self.glob.matches(s);
-        if self.negate { !m } else { m }
+    pub fn matches(&self, p: &Path) -> bool {
+        let path_only = self.original.contains("**");
+        let mut res = self.glob.matches_path(p);
+        if !res && !path_only {
+            res = p
+                .file_name()
+                .and_then(|oss| oss.to_str())
+                .map(|p| self.glob.matches(p))
+                .unwrap_or_default()
+        }
+        if self.negate { !res } else { res }
     }
 }
 
@@ -111,11 +118,8 @@ fn globs_match(path: &Path, globs: &[Glob]) -> bool {
     if globs.is_empty() {
         return true;
     }
-    globs.iter().any(|pat| {
-        path.to_str()
-            .map(|path| pat.matches(path))
-            .unwrap_or_default()
-    })
+    // for globs, we use 'all'
+    globs.iter().all(|pat| pat.matches(path))
 }
 
 fn fts_match(path: &Path, fts: &[String]) -> bool {
@@ -128,4 +132,33 @@ fn fts_match(path: &Path, fts: &[String]) -> bool {
             .map(|ext| ext == ft)
             .unwrap_or_default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod globs {
+        use super::*;
+
+        #[test]
+        fn test_globs() {
+            let path = PathBuf::from("/foo/bar/baz/README.md");
+            for glob in [
+                "README.md",
+                "README*",
+                "*.md",
+                "**/README.md",
+                "**/bar/**/*.md",
+                "*baz/README*",
+            ] {
+                let gp = Glob::parse(glob).unwrap();
+                assert!(gp.matches(&path), "expected '{glob}' to match {path:?}");
+            }
+            for glob in ["bar", "baz/README.md"] {
+                let gp = Glob::parse(glob).unwrap();
+                assert!(!gp.matches(&path), "did not expect '{glob}' to match {path:?}");
+            }
+        }
+    }
 }
