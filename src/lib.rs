@@ -41,6 +41,20 @@ pub struct Args {
     pub verbose: bool,
 }
 
+trait HumanBytes {
+    fn to_human(&self) -> String;
+}
+
+impl HumanBytes for usize {
+    fn to_human(&self) -> String {
+        match *self {
+            0..1024 => format!("{self}b"),
+            1024..1048576 => format!("{:.2}Kb", ((*self) as f64 / 1024.0)),
+            _ => format!("{:.2}Mb", ((*self) as f64 / 1024.0 / 1024.0)),
+        }
+    }
+}
+
 static PROMPT: &str = include_str!("../prompt.md");
 
 #[derive(clap::ValueEnum)]
@@ -74,12 +88,12 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
         let info = res?;
         let path = info.path.to_string_lossy();
         let contents = String::from_utf8_lossy(&info.bs).to_string();
-        tracing::debug!("Including {path} [{} bs]", contents.len());
+        tracing::debug!("Including {path} [{}]", contents.len().to_human());
         buf.push_str(&header);
         buf.push_str(&format!("\n## Path:{}\n\n{}\n", path, contents));
     }
     let prompt = PROMPT.replace("FILES_CONTENT", &buf);
-    debug!("Created prompt of size {}bs", prompt.len());
+    debug!("Created prompt of size {}", prompt.len().to_human());
 
     let reqs = ChatRequest::new(vec![ChatMessage::system(prompt)]);
     let model = "gpt-4o-mini";
