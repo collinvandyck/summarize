@@ -29,7 +29,6 @@ impl Glob {
         Ok(Self { original, glob, negate })
     }
     pub fn matches(&self, p: &Path) -> bool {
-        println!("matches {self:#?}");
         let path_only = self.original.contains("**");
         let mut res = self.glob.matches_path(p);
         if !res && !path_only {
