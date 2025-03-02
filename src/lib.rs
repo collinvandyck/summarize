@@ -1,5 +1,5 @@
 use anyhow::{Context, bail};
-use files::FindOpts;
+use files::{FileInfo, FindOpts};
 use futures_util::StreamExt;
 use genai::{
     Client,
@@ -8,7 +8,7 @@ use genai::{
 use glob::Pattern;
 use itertools::Itertools;
 use rand::seq::IndexedRandom;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use strum::Display;
 use tracing::debug;
 
@@ -29,8 +29,8 @@ pub struct Args {
     pub globs: Vec<String>,
 
     /// The language model to use
-    #[arg(value_enum, long, short, default_value = "gpt-4o-mini")]
-    pub model: ModelKind,
+    #[arg(long, short, default_value = "gpt-4o-mini")]
+    pub model: String,
 
     /// Do not make requests to the LLM
     #[arg(long)]
@@ -39,6 +39,9 @@ pub struct Args {
     /// Print extra debugging information
     #[arg(long, short)]
     pub verbose: bool,
+
+    /// The optional prompt
+    prompt: Option<String>,
 }
 
 trait HumanBytes {
@@ -65,6 +68,15 @@ pub enum ModelKind {
     Gpt4oMini,
 }
 
+fn file_block(path: &Path, content: &[u8]) -> String {
+    let mut buf = String::new();
+    let content = String::from_utf8_lossy(content);
+    buf.push_str(&format!("<file path={path:?}>\n"));
+    buf.push_str(&format!("{content}\n"));
+    buf.push_str("</file>\n");
+    buf
+}
+
 pub async fn run(args: Args) -> anyhow::Result<()> {
     debug!("Starting run...");
     debug!("Model: {}", args.model);
@@ -83,24 +95,27 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
         globs,
     });
     let mut buf = String::new();
-    let mut header = format!("## START FILE {}", "#".repeat(60));
     while let Some(res) = stream.next().await {
-        let info = res?;
-        let path = info.path.to_string_lossy();
-        let contents = String::from_utf8_lossy(&info.bs).to_string();
-        tracing::debug!("Including {path} [{}]", contents.len().to_human());
-        buf.push_str(&header);
-        buf.push_str(&format!("\n## Path:{}\n\n{}\n", path, contents));
+        let FileInfo { path, bs } = res?;
+        tracing::debug!("Including {path:?} [{}]", bs.len().to_human());
+        buf.push_str(&file_block(&path, &bs));
+        buf.push_str("\n\n");
     }
     let prompt = PROMPT.replace("FILES_CONTENT", &buf);
-    debug!("Created prompt of size {}", prompt.len().to_human());
+    let prompt = prompt.replace("USER_PROMPT", &args.prompt.unwrap_or_default());
 
-    let reqs = ChatRequest::new(vec![ChatMessage::system(prompt)]);
-    let model = "gpt-4o-mini";
+    debug!("Created prompt of size {}", prompt.len().to_human());
+    //debug!("Prompt:\n{}", prompt);
+
+    tokio::fs::write("request.md", prompt.as_bytes())
+        .await
+        .context("failed to write generated prompt")?;
+
+    let reqs = ChatRequest::new(vec![ChatMessage::system(&prompt)]);
     let client = Client::default();
     if !args.dry_run {
         let resp: ChatResponse = client
-            .exec_chat(model, reqs, None)
+            .exec_chat(&args.model, reqs, None)
             .await
             .context("failed to call model")?;
         let ChatResponse {
@@ -115,6 +130,10 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
         let MessageContent::Text(content) = content else {
             bail!("unexpected response: {content:?}");
         };
+        tokio::fs::write("response.md", content.as_bytes())
+            .await
+            .context("failed to write generated prompt")?;
+
         println!("{content}");
     }
     Ok(())

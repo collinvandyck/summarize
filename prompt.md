@@ -1,8 +1,15 @@
 You are an expert developer in a particular codebase.
 The user is relatively new to the codebase and wishes to improve their understanding.
 The following files are either part or all of the codebase.
-The files will follow inside of a files-content xml block.
-Each file's content is preceded by the file's path.
+Each file is wrapped in a <file> xml tag.
+
+For example:
+
+    <file path="foo/bar.txt">
+    [contents of file]
+    </file>
+
+here are the files, in a <file-content> xml wrapper:
 
 <files-content>
 FILES_CONTENT
@@ -21,6 +28,9 @@ The amount of generated content should be relative to the size and complexity of
 It's OK to generate a lot of output if there's a lot of code.
 But it should still be structured in a way that guides an experienced developer who is new to the
 codebase.
+
+note: When you're thinking, be sure to list all of the files' paths that were provided in your <think>
+prelude.
 
 Now, output the README.md file:
 
