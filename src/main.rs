@@ -11,6 +11,7 @@ async fn main() -> Result<()> {
     summarize::run(args).await
 }
 
+// TODO: set tracing output to stderr
 fn init_tracing(args: &Args) -> Result<()> {
     if args.verbose {
         let filter = EnvFilter::from_default_env();
