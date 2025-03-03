@@ -8,7 +8,10 @@ use genai::{
 use glob::Pattern;
 use itertools::Itertools;
 use rand::seq::IndexedRandom;
-use std::path::{Path, PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 use strum::Display;
 use tracing::debug;
 
@@ -77,8 +80,23 @@ fn file_block(path: &Path, content: &[u8]) -> String {
     buf
 }
 
+async fn project_path() -> anyhow::Result<PathBuf> {
+    let proj = home::home_dir()
+        .context("no home dir found for user")?
+        .join(".config")
+        .join("summarize");
+    tokio::fs::create_dir_all(&proj)
+        .await
+        .context("ensure project dir")?;
+    Ok(proj)
+}
+
 pub async fn run(args: Args) -> anyhow::Result<()> {
+    let proj = project_path()
+        .await
+        .context("could not get project path dir")?;
     debug!("Starting run...");
+    debug!("Proj dir: {proj:?}");
     debug!("Model: {}", args.model);
     let dir = match args.dir.clone() {
         Some(dir) => dir,
