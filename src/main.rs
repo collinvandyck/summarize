@@ -11,19 +11,19 @@ async fn main() -> Result<()> {
     summarize::run(args).await
 }
 
-// TODO: set tracing output to stderr
 fn init_tracing(args: &Args) -> Result<()> {
-    if args.verbose {
-        let filter = EnvFilter::from_default_env();
-        let directive = "summarize=debug"
-            .parse()
-            .context("could not parse env filter")?;
-        let filter = filter.add_directive(directive);
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .init();
+    let filter = if args.verbose {
+        EnvFilter::from_default_env().add_directive(
+            "summarize=debug"
+                .parse()
+                .context("could not parse env filter")?,
+        )
     } else {
-        tracing_subscriber::fmt().init();
-    }
+        EnvFilter::from_default_env()
+    };
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(filter)
+        .init();
     Ok(())
 }
